@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+<style type="text/css">
+  html { height: 100% }
+  body { height: 100%; margin: 0; padding: 0 }
+  #map_canvas { height: 100% }
+</style>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.4/jquery.min.js"></script>
+<script type="text/javascript"
+    src="http://maps.googleapis.com/maps/api/js?sensor=false">
+</script>
+<script type="text/javascript">
+  var maps = new Array(2);
+  // Top and bottom are references to the two maps corresponding to the
+  // layers; top_map has the control.
+  var top_map;
+  var bottom_map;
+  var geocoder;
+  var zoom_listener;
+
+  function message (msg) {
+    $("#messages").append("<p>"+msg+"</p>")
+  }
+
+  function initialize() {
+    var latlng = new google.maps.LatLng(50.691238, -2.439880);
+    var options = {
+      zoom: 10,
+      disableDefaultUI: true,
+      panControl:true,
+      center: latlng,
+      mapTypeId: google.maps.MapTypeId.ROADMAP,
+      styles: [ 
+         { 
+           featureType: "poi", 
+           stylers: [ 
+               { visibility: "off" } 
+             ] 
+         },
+         { 
+           stylers: [ 
+             { saturation: 65 } 
+           ] 
+         },
+         { 
+           featureType: "landscape",  
+           stylers: [ 
+              { saturation: -97 }, 
+              { visibility: "off" } 
+           ] 
+         } 
+      ]
+    };
+
+    maps[1] = new google.maps.Map(document.getElementById("map_canvas_1"),
+        options);
+    maps[2] = new google.maps.Map(document.getElementById("map_canvas_2"),
+        options);
+    map_order (1,2)
+    geocoder = new google.maps.Geocoder();
+  }
+
+  // Move the maps into order, keep track of which is top, and 
+  // put in a zoom listener to keep the bottom map zoom in
+  // sync with the top map (which responds to mouse roll as well 
+  // as the zoom buttons.) 
+  function map_order(bottom, top) {
+    $("#map_canvas_"+bottom).appendTo("#lower_map")
+    $("#map_canvas_"+top).appendTo("#upper_map")
+    top_map = maps[top]
+    bottom_map = maps[bottom]
+    if(zoom_listener!=null) google.maps.event.removeListener(zoom_listener);
+    zoom_listener=google.maps.event.addListener(top_map, 'zoom_changed', sync_zoom) ;   
+  }
+
+  function sync_zoom () { 
+      bottom_map.setZoom(top_map.getZoom());
+  }
+
+  function search(box) {
+    var addr =  $("#loc_"+box).val()
+    geocoder.geocode( { 'address': addr}, function(results, status) {
+      if (status == google.maps.GeocoderStatus.OK) {
+        maps[box].setCenter(results[0].geometry.location);
+      } else if (status==google.maps.GeocoderStatus.ZERO_RESULTS) {
+        message(addr + " was not found");
+      } else {
+        message("Something bad happened: "+status);
+      }
+
+      })
+  }
+
+  function zoom(inc) {
+    // only  zoom the top, let the event listener handle sync.
+    top_map.setZoom(top_map.getZoom()+inc)
+  }
+
+</script>
+</head>
+<body onload="initialize()">
+  <div id="controls" style="width:20%; height:100%; top:0px; left:0px; position:absolute;">
+    <table>
+    <tr><th>Search location</th><th>Top</th><tr>
+    <tr><td><input type="text" id="loc_1" onchange="search(1)"/></td><td><input type="radio" name="top" onclick="map_order(2,1)"/></td></tr>
+    <tr><td><input type="text" id="loc_2" onchange="search(2)"/></td><td><input type="radio" name="top" onclick="map_order(1,2)" checked=""/></td></tr>
+    </table>
+    <p><button onclick="zoom(1)">+</button><button onclick="zoom(-1)">-</button>zoom</p>
+    <div id="messages" style="font-size:small;"></div>
+  </div>
+  <div id="lower_map">
+    <div id="map_canvas_1" style="width:80%; height:100%; right:0px; top:0px; position:absolute;"></div>
+    </div>
+  <div id="upper_map" style="opacity:0.7;">
+    <div id="map_canvas_2" style="width:80%; height:100%; right:0px; top:0px; position:absolute;"></div>
+  </div>
+</body>
+</html>
