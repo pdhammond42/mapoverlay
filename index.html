@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map Overlay</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+  body { display: flex; }
+  #controls { width: 18rem; padding: 0.75rem; box-sizing: border-box; overflow-y: auto; }
+  #controls h1 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+  .place { margin-bottom: 0.75rem; }
+  .place > label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+  .place form { display: flex; gap: 0.25rem; }
+  .place input[type=text] { flex: 1; min-width: 0; }
+  .place-1 label { color: #1565c0; }
+  .place-2 label { color: #c62828; }
+  #messages { font-size: small; color: #a00; }
+  #maps { position: relative; flex: 1; }
+  .map { position: absolute; inset: 0; }
+  #map_1 .leaflet-tile-pane { filter: grayscale(0.6); }
+  #map_2 .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) saturate(1.5); }
+  .map.bottom { z-index: 1; }
+  .map.top { z-index: 2; }
+  .hint { font-size: small; color: #555; }
+  @media (max-width: 40rem) {
+    body { flex-direction: column; }
+    #controls { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="controls">
+  <h1>Map Overlay</h1>
+  <div class="place place-1">
+    <label for="loc_1">Place 1</label>
+    <form data-map="1"><input type="text" id="loc_1" placeholder="Search…"><button>Go</button></form>
+    <input type="radio" name="top" id="top_1" value="1"> <label for="top_1" class="inline">on top</label>
+  </div>
+  <div class="place place-2">
+    <label for="loc_2">Place 2</label>
+    <form data-map="2"><input type="text" id="loc_2" placeholder="Search…"><button>Go</button></form>
+    <input type="radio" name="top" id="top_2" value="2" checked> <label for="top_2" class="inline">on top</label>
+  </div>
+  <p><label for="opacity">Top map opacity</label><br>
+     <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.6"></p>
+  <p class="hint">Pan and zoom the top map. The other map keeps the same
+    ground scale (corrected for latitude). Swap which is on top to pan the other.</p>
+  <div id="messages"></div>
+</div>
+<div id="maps">
+  <div id="map_1" class="map"></div>
+  <div id="map_2" class="map"></div>
+</div>
+<script>
+{ // Block scope: a global `top` would clash with window.top.
+  // OSM's standard tiles need no key; CSS filters (.map-N) tell the two maps apart.
+  const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  const DEFAULTS = { 1: [51.5074, -0.1278], 2: [40.7128, -74.0060], zoom: 10, top: 2 };
+
+  const maps = {};
+  let top = 1, syncing = false;
+
+  function message(msg) {
+    const p = document.createElement('p');
+    p.textContent = msg;
+    document.getElementById('messages').replaceChildren(p);
+  }
+
+  function other(n) { return n === 1 ? 2 : 1; }
+
+  // Web Mercator metres-per-pixel is proportional to cos(lat) / 2^zoom, so
+  // equal ground scale needs zoom offset log2(cos(latB) / cos(latA)).
+  function sync() {
+    if (syncing) return;
+    syncing = true;
+    const lead = maps[top], follow = maps[other(top)];
+    const rad = d => d * Math.PI / 180;
+    const z = lead.getZoom() +
+      Math.log2(Math.cos(rad(follow.getCenter().lat)) / Math.cos(rad(lead.getCenter().lat)));
+    follow.setView(follow.getCenter(), z, { animate: false });
+    syncing = false;
+    saveHash();
+  }
+
+  function setTop(n) {
+    top = n;
+    maps[n].getContainer().className = maps[n].getContainer().className.replace(/\b(top|bottom)\b/g, '') + ' top';
+    const o = maps[other(n)].getContainer();
+    o.className = o.className.replace(/\b(top|bottom)\b/g, '') + ' bottom';
+    applyOpacity();
+    document.getElementById('top_' + n).checked = true;
+    sync();
+  }
+
+  function applyOpacity() {
+    maps[top].getContainer().style.opacity = document.getElementById('opacity').value;
+    maps[other(top)].getContainer().style.opacity = 1;
+  }
+
+  async function search(n, query) {
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=' +
+                  encodeURIComponent(query);
+      const res = await fetch(url, { headers: { 'Accept-Language': navigator.language } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const results = await res.json();
+      if (!results.length) { message(query + ' was not found'); return; }
+      message('');
+      maps[n].setView([+results[0].lat, +results[0].lon], maps[n].getZoom(), { animate: false });
+      sync();
+    } catch (e) {
+      message('Search failed: ' + e.message);
+    }
+  }
+
+  // State in the URL hash so a comparison can be bookmarked or shared:
+  // #lat1,lng1,lat2,lng2,zoomOfTop,top
+  function saveHash() {
+    const c1 = maps[1].getCenter(), c2 = maps[2].getCenter(), f = x => x.toFixed(5);
+    history.replaceState(null, '', '#' + [f(c1.lat), f(c1.lng), f(c2.lat), f(c2.lng),
+      maps[top].getZoom().toFixed(2), top].join(','));
+  }
+
+  function loadHash() {
+    const v = location.hash.slice(1).split(',').map(Number);
+    if (v.length !== 6 || v.some(isNaN)) return DEFAULTS;
+    return { 1: [v[0], v[1]], 2: [v[2], v[3]], zoom: v[4], top: v[5] === 1 ? 1 : 2 };
+  }
+
+  const state = loadHash();
+  for (const n of [1, 2]) {
+    maps[n] = L.map('map_' + n, { zoomSnap: 0, zoomDelta: 0.5, wheelPxPerZoomLevel: 120 })
+      .setView(state[n], state.zoom);
+    L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19 }).addTo(maps[n]);
+    L.control.scale({ position: n === 1 ? 'bottomleft' : 'bottomright' }).addTo(maps[n]);
+    maps[n].on('zoom move', () => { if (n === top) sync(); });
+  }
+
+  for (const form of document.querySelectorAll('form[data-map]')) {
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      search(+form.dataset.map, form.querySelector('input').value);
+    });
+  }
+  for (const r of document.querySelectorAll('input[name=top]')) {
+    r.addEventListener('change', () => setTop(+r.value));
+  }
+  document.getElementById('opacity').addEventListener('input', applyOpacity);
+
+  setTop(state.top);
+}
+</script>
+</body>
+</html>
