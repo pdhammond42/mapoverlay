@@ -44,7 +44,9 @@
      <input type="range" id="opacity" min="0" max="1" step="0.05" value="1"></p>
   <p class="hint">The top map draws only roads, railways, water outlines and place names, so the
     map beneath shows through. Pan and zoom the top map; the other keeps the same
-    ground scale (corrected for latitude). Swap which is on top to pan the other.</p>
+    ground scale (corrected for latitude). Rotate the top map with right-drag,
+    Ctrl-drag or a two-finger twist; click the compass to face north again.
+    Swap which is on top to pan or rotate the other.</p>
   <div id="messages"></div>
 </div>
 <div id="maps">
@@ -100,7 +102,8 @@
     ],
   };
 
-  const DEFAULTS = { 1: [-0.1278, 51.5074], 2: [-74.0060, 40.7128], zoom: 9, top: 2 };
+  const DEFAULTS = { 1: [-0.1278, 51.5074], 2: [-74.0060, 40.7128], zoom: 9, top: 2,
+                     bearing: { 1: 0, 2: 0 } };
   const maps = {};
   let top = 2, syncing = false;
   const styleOf = {}; // style each map has, so a swap only restyles what changes
@@ -163,17 +166,20 @@
   }
 
   // State in the URL hash so a comparison can be bookmarked or shared:
-  // #lat1,lng1,lat2,lng2,zoomOfTop,top
+  // #lat1,lng1,lat2,lng2,zoomOfTop,top,bearing1,bearing2
+  // Older links without the bearings still load, facing north.
   function saveHash() {
     const c1 = maps[1].getCenter(), c2 = maps[2].getCenter(), f = x => x.toFixed(5);
+    const b = n => maps[n].getBearing().toFixed(1);
     history.replaceState(null, '', '#' + [f(c1.lat), f(c1.lng), f(c2.lat), f(c2.lng),
-      maps[top].getZoom().toFixed(2), top].join(','));
+      maps[top].getZoom().toFixed(2), top, b(1), b(2)].join(','));
   }
 
   function loadHash() {
     const v = location.hash.slice(1).split(',').map(Number);
-    if (v.length !== 6 || v.some(isNaN)) return DEFAULTS;
-    return { 1: [v[1], v[0]], 2: [v[3], v[2]], zoom: v[4], top: v[5] === 1 ? 1 : 2 };
+    if (![6, 8].includes(v.length) || v.some(isNaN)) return DEFAULTS;
+    return { 1: [v[1], v[0]], 2: [v[3], v[2]], zoom: v[4], top: v[5] === 1 ? 1 : 2,
+             bearing: { 1: v[6] || 0, 2: v[7] || 0 } };
   }
 
   const state = loadHash();
@@ -182,14 +188,14 @@
     maps[n] = new maplibregl.Map({
       container: 'map_' + n, style: styleOf[n], center: state[n], zoom: state.zoom,
       attributionControl: n === 1 && {}, // one copy: both maps use the same data
-      dragRotate: false, pitchWithRotate: false, touchPitch: false,
+      bearing: state.bearing[n], // each map keeps its own, so one can turn against the other
+      pitchWithRotate: false, touchPitch: false,
     });
-    maps[n].touchZoomRotate.disableRotation();
     maps[n].addControl(new maplibregl.ScaleControl(), n === 1 ? 'bottom-left' : 'bottom-right');
     maps[n].on('move', () => { if (n === top) sync(); });
   }
-  maps[1].addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-  maps[2].addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+  maps[1].addControl(new maplibregl.NavigationControl(), 'top-left');
+  maps[2].addControl(new maplibregl.NavigationControl(), 'top-left');
 
   for (const form of document.querySelectorAll('form[data-map]')) {
     form.addEventListener('submit', e => {
