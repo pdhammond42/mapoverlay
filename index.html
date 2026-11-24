@@ -21,9 +21,28 @@
   .map.bottom { z-index: 1; }
   .map.top { z-index: 2; }
   .hint { font-size: small; color: #555; }
+  .opacity label { display: block; }
+  #help { margin: 0.75rem 0; }
+  #help summary { cursor: pointer; font-size: small; color: #555; }
   @media (max-width: 40rem) {
     body { flex-direction: column; }
-    #controls { width: 100%; }
+    /* Above the maps, so the help popup can cover them. */
+    #controls { width: 100%; padding: 0.4rem 0.5rem; position: relative; z-index: 3; overflow: visible; }
+    #controls h1 { display: none; }
+    /* One line per place: radio, search box, Go. */
+    .place { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem; }
+    .place > label, .place .ontop { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .place form { flex: 1; }
+    .place span { order: -1; }
+    .extras { display: flex; align-items: center; gap: 0.5rem; }
+    .opacity { flex: 1; display: flex; align-items: center; gap: 0.4rem; font-size: small; }
+    .opacity label { display: inline; white-space: nowrap; }
+    .opacity input { flex: 1; min-width: 0; }
+    #help { margin: 0; }
+    #help .hint { position: absolute; left: 0.5rem; right: 0.5rem; top: 100%; margin: 0.25rem 0 0;
+                  padding: 0.75rem; background: #fff; border-radius: 0.4rem;
+                  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+    #messages p { margin: 0.2rem 0 0; }
   }
 </style>
 </head>
@@ -32,21 +51,25 @@
   <h1>Map Overlay</h1>
   <div class="place">
     <label for="loc_1">Place 1</label>
-    <form data-map="1"><input type="text" id="loc_1" placeholder="Search…"><button>Go</button></form>
-    <span><input type="radio" name="top" id="top_1" value="1"> <label for="top_1">on top</label></span>
+    <form data-map="1"><input type="text" id="loc_1" placeholder="Search place 1…"><button>Go</button></form>
+    <span><input type="radio" name="top" id="top_1" value="1"> <label for="top_1" class="ontop">on top</label></span>
   </div>
   <div class="place">
     <label for="loc_2">Place 2</label>
-    <form data-map="2"><input type="text" id="loc_2" placeholder="Search…"><button>Go</button></form>
-    <span><input type="radio" name="top" id="top_2" value="2" checked> <label for="top_2">on top</label></span>
+    <form data-map="2"><input type="text" id="loc_2" placeholder="Search place 2…"><button>Go</button></form>
+    <span><input type="radio" name="top" id="top_2" value="2" checked> <label for="top_2" class="ontop">on top</label></span>
   </div>
-  <p><label for="opacity">Top map opacity</label><br>
-     <input type="range" id="opacity" min="0" max="1" step="0.05" value="1"></p>
+  <div class="extras">
+  <div class="opacity"><label for="opacity">Top map opacity</label>
+     <input type="range" id="opacity" min="0" max="1" step="0.05" value="1"></div>
+  <details id="help"><summary>How it works</summary>
   <p class="hint">The top map draws only roads, railways, water outlines and place names, so the
     map beneath shows through. Pan and zoom the top map; the other keeps the same
     ground scale (corrected for latitude). Rotate the top map with right-drag,
     Ctrl-drag or a two-finger twist; click the compass to face north again.
     Swap which is on top to pan or rotate the other.</p>
+  </details>
+  </div>
   <div id="messages"></div>
 </div>
 <div id="maps">
@@ -207,6 +230,14 @@
     r.addEventListener('change', () => setTop(+r.value));
   }
   document.getElementById('opacity').addEventListener('input', applyOpacity);
+
+  // Help is a popup on a phone, opened on demand; on a wider screen there is room to show it.
+  const help = document.getElementById('help');
+  const narrow = matchMedia('(max-width: 40rem)');
+  help.open = !narrow.matches;
+  document.addEventListener('click', e => {
+    if (narrow.matches && help.open && !help.contains(e.target)) help.open = false;
+  });
 
   setTop(state.top);
 }
